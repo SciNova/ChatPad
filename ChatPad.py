@@ -100,6 +100,9 @@ class ChatPad:
 	def models(self):
 		return self.openrouter.models + self.deepseek.models + self.local.models
 
+	def model(self, id):
+		return next((m for m in self.models if m.id == id), None)
+
 	@property
 	def free_models(self):
 		return self.openrouter.free_models + self.deepseek.free_models + self.local.free_models
@@ -215,20 +218,19 @@ class Settings:
 	def __init__(self, session):
 		self.session = session
 		self.model = session.get_setting("model")
-		self.system_model = session.get_setting("system_model")
 		self.tools = session.get_setting("tools")
 		self.mode = session.get_setting("mode")
 		self.think = session.get_setting("think")
 		self.max_steps = session.get_setting("max_steps")
 
 	def save(self):
-		for key in ("model", "system_model", "tools", "mode", "think", "max_steps"):
+		for key in ("model", "tools", "mode", "think", "max_steps"):
 			value = getattr(self, key)
 			if value is not None:
 				self.session.set_setting(key, value)
 
 	def to_dict(self):
-		return {"model": self.model, "system_model": self.system_model, "tools": self.tools,
+		return {"model": self.model, "tools": self.tools,
 				"mode": self.mode, "think": self.think, "max_steps": self.max_steps}
 
 

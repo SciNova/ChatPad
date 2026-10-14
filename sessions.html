@@ -17,8 +17,8 @@
 	<div class="session-row">
 		<span class="session-time">{{ timestamp|format_hm }}</span>
 		{% for model in models %}
-			{% set icon = model_icon_url(icons, model) %}
-			{% if icon %}<img src="{{ icon }}" alt="">{% endif %}
+			{% set m = chatpad.model(model) %}
+			{% if m and m.icon %}<img src="/@@/models/{{ m.icon }}" alt="">{% endif %}
 		{% endfor %}
 		<a href="/chat/{{ s_id }}">{{ title }}</a>
 	</div>

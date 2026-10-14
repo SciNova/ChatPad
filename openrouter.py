@@ -2,6 +2,9 @@ import requests
 import json
 import random
 import os
+import glob
+
+ICON_DIR = os.path.join(os.path.dirname(__file__), "@@", "models")
 
 def api_key():
 	with open(os.path.join(os.path.dirname(__file__), "key.txt"), "r") as f:
@@ -55,6 +58,18 @@ class Model:
 		self.id = id
 		self.free = free
 		self.__dict__.update(fields)
+
+	@property
+	def brand(self):
+		parts = self.id.split('/')
+		if parts[0] == "local":
+			return "qwen"
+		return parts[1]
+
+	@property
+	def icon(self):
+		matches = glob.glob(os.path.join(ICON_DIR, f"{self.brand}.*"))
+		return os.path.basename(matches[0]) if matches else None
 
 	def message(self, messages, think, tools):
 		real_id = self.id.split('/', 1)[1]

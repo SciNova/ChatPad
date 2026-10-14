@@ -73,7 +73,6 @@ class Settings:
 		json = json or {}
 		self.session = session
 		self.model = json.get("model")
-		self.system_model = json.get("system_model")
 		self.tools = json.get("tools")
 		self.mode = json.get("mode")
 		self.think = json.get("think")

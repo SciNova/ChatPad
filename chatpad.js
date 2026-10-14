@@ -1,3 +1,14 @@
+Handlebars.registerHelper('eq', (a, b) => a === b)
+
+function renderModelMenu() {
+	const list = document.getElementById('model-menu-list')
+	if (!list || !chatpad) return
+	const source = document.getElementById('model-menu-template').innerHTML
+	const selectedModelId = document.querySelector('[name="model"]')?.value || null
+	const render = Handlebars.compile(source)
+	list.innerHTML = render({ providers: chatpad.providers, selectedModelId })
+}
+
 class Turn {
 	constructor(json, message) {
 		this.uuid = json.uuid
@@ -40,26 +51,70 @@ class Message {
 	}
 }
 
+class Model {
+	constructor(provider, id, free, fields) {
+		this.provider = provider
+		this.id = id
+		this.free = free
+		Object.assign(this, fields)
+	}
+}
+
+class Provider {
+	constructor(name) {
+		this.name = name
+		this.models = []
+	}
+}
+
+class ChatPad {
+	constructor(records) {
+		this.providers = []
+		const byName = {}
+		for (const record of records) {
+			const { provider: providerName, id, free, ...fields } = record
+			let provider = byName[providerName]
+			if (!provider) {
+				provider = new Provider(providerName)
+				byName[providerName] = provider
+				this.providers.push(provider)
+			}
+			provider.models.push(new Model(provider, id, free, fields))
+		}
+	}
+
+	get models() {
+		return this.providers.flatMap(p => p.models)
+	}
+
+	model(id) {
+		return this.models.find(m => m.id === id)
+	}
+}
+
+const MAX_STEPS = 50
+
 class Settings {
-	constructor(json, session) {
+	constructor(session = null, json = {}) {
 		this.session = session
-		this.model = json.model
-		this.system_model = json.system_model
-		this.tools = json.tools
-		this.mode = json.mode
-		this.think = json.think
-		this.max_steps = json.max_steps
+		this.model = json.model ?? ''
+		this.tools = json.tools ?? []
+		this.mode = json.mode ?? 'auto'
+		this.think = json.think ?? true
+		this.max_steps = json.max_steps ?? MAX_STEPS
 	}
 
 	async save() {
-		for (const key of ['model', 'system_model', 'tools', 'mode', 'think', 'max_steps']) {
+		for (const key of ['model', 'tools', 'mode', 'think', 'max_steps']) {
 			const value = this[key]
 			if (value === null || value === undefined) continue
-			await fetch(`/api/sessions/${this.session.uuid}/settings/${key}`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ value }),
-			})
+			if (this.session) {
+				await fetch(`/api/sessions/${this.session.uuid}/settings/${key}`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ value }),
+				})
+			}
 		}
 	}
 }
@@ -69,7 +124,7 @@ class Session {
 		this.uuid = json.uuid
 		this.archived = json.archived
 		this.status = json.status
-		this.settings = new Settings(json.settings, this)
+		this.settings = new Settings(this, json.settings)
 		this.messages = json.messages.map(m => new Message(m, this))
 	}
 
@@ -221,16 +276,13 @@ class MessageView {
 			info.appendChild(model)
 		}
 		model.innerHTML = ''
-		const [provider, , rest] = turn.model.includes('/') ? turn.model.split(/\/(.*)/) : [null, null, null]
-		const slug = provider === 'local' ? 'qwen' : (rest ? rest.split('/')[0].replace(/^~/, '') : null)
-		const icon = slug ? MODEL_ICONS[slug] : null
-		if (icon) {
+		const modelInfo = chatpad.model(turn.model)
+		if (modelInfo && modelInfo.icon) {
 			const img = document.createElement('img')
-			img.src = icon
+			img.src = `/@@/models/${modelInfo.icon}`
 			img.alt = ''
 			model.appendChild(img)
 		}
-		const modelInfo = models.find(m => m.id === turn.model)
 		const small = document.createElement('small')
 		small.textContent = (modelInfo && modelInfo.name) || turn.model
 		model.appendChild(small)
@@ -562,18 +614,12 @@ class Chatbox {
 		this.applyThink(session.settings.think == null ? true : session.settings.think)
 		this.applyMode(session.settings.mode || 'auto')
 		if (session.settings.model) this.applyModel(session.settings.model)
-		if (session.settings.system_model) this.applySystemModel(session.settings.system_model)
 	}
 
 	toggleModelList() {
 		const list = this.container.querySelector('#model-menu')
 		const hidden = list.classList.toggle('hidden')
 		if (!hidden) this.container.querySelector('#tools-menu').classList.add('hidden')
-	}
-
-	toggleSystemModelList() {
-		const hidden = this.container.querySelector('#system-model-menu').classList.toggle('hidden')
-		this.container.querySelector('#system-model-link').classList.toggle('hidden', !hidden)
 	}
 
 	toggleToolsList() {
@@ -689,35 +735,6 @@ class Chatbox {
 		this.container.querySelector('#model-menu').classList.add('hidden')
 	}
 
-	selectSystemModel(el) {
-		this.system_model = el.dataset.id
-	}
-
-	get system_model() {
-		const el = this.container.querySelector('#system-model-menu .model-toggle.enabled')
-		return el ? el.dataset.id : null
-	}
-
-	set system_model(value) {
-		this.applySystemModel(value)
-		if (session) {
-			session.settings.system_model = value
-			session.settings.save()
-		}
-	}
-
-	applySystemModel(value) {
-		this.container.querySelectorAll('#system-model-menu .model-toggle.enabled').forEach(o => o.classList.remove('enabled'))
-		const link = this.container.querySelector('#system-model-link')
-		const option = value && this.container.querySelector(`#system-model-menu .model-toggle[data-id="${CSS.escape(value)}"]`)
-		if (option) {
-			option.classList.add('enabled')
-			this.setHeaderModel(link, option)
-			link.classList.remove('hidden')
-		}
-		this.container.querySelector('#system-model-menu').classList.add('hidden')
-	}
-
 	toggleMode(el) {
 		this.mode = el.dataset.mode === 'manual' ? 'auto' : 'manual'
 	}
@@ -797,7 +814,7 @@ let session = null
 let liveSessionView = null
 let chatbox = null
 let permissionBox = null
-let models = []
+let chatpad = null
 
 function startLiveTurn(record) {
 	session.messages.push(new Message({ uuid: record.uuid, hidden: false, turns: [] }, session))
@@ -918,7 +935,6 @@ async function submitLiveChat(event) {
 		session = new Session({ uuid: ack.session, archived: false, status: 'busy', settings: {}, messages: [] })
 		liveSessionView = new SessionView(ensureMessagesContainer(), session)
 		session.settings.model = chatbox.model
-		session.settings.system_model = chatbox.system_model
 		session.settings.tools = chatbox.tools
 		session.settings.mode = chatbox.mode
 		session.settings.think = chatbox.think
@@ -938,8 +954,9 @@ async function init() {
 	const sessionId = form.dataset.sessionId || null
 	form.addEventListener('submit', submitLiveChat)
 	chatbox = new Chatbox(document.querySelector('.chatbox'))
+	chatpad = new ChatPad(await (await fetch('/api/models')).json())
+	renderModelMenu()
 	if (!sessionId) return
-	models = await (await fetch('/api/models')).json()
 	const json = await (await fetch(`/api/sessions/${sessionId}`)).json()
 	session = new Session(json)
 	liveSessionView = new SessionView(ensureMessagesContainer(), session)

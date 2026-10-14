@@ -7,6 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, redirect, send_from_directory, jsonify, abort, Response
 from ChatPad import ChatPad, Session, Turn, ToolTurn, NO_CONTENT_TOOLS, tool_summary
+from openrouter import ICON_DIR
 import re
 import requests
 from rotate_keys import rotate
@@ -113,21 +114,6 @@ def model_name(model_id):
 			return m.name or model_id
 	return model_id
 
-def model_icon_slug(model_id):
-	# Provider icon filename (without extension) for a model id. OpenRouter and
-	# DeepSeek ids embed the vendor as the second path segment, but local ids are
-	# just "local/<name>" with no vendor, and the local models are all Qwen.
-	if not model_id or "/" not in model_id:
-		return None
-	provider, _, rest = model_id.partition("/")
-	if provider == "local":
-		return "qwen"
-	return rest.split("/")[0].lstrip("~")
-
-def model_icon_url(icons, model_id):
-	slug = model_icon_slug(model_id)
-	return icons.get(slug) if slug else None
-
 def asset_version(filename):
 	return int(os.path.getmtime(os.path.join(os.path.dirname(__file__), filename)))
 
@@ -135,12 +121,12 @@ app.jinja_env.globals['tool_summary'] = tool_summary
 app.jinja_env.globals['find_tool_result'] = find_tool_result
 app.jinja_env.globals['NO_CONTENT_TOOLS'] = NO_CONTENT_TOOLS
 app.jinja_env.globals['model_name'] = model_name
-app.jinja_env.globals['model_icon_url'] = model_icon_url
 app.jinja_env.globals['asset_version'] = asset_version
+app.jinja_env.globals['chatpad'] = chatpad
 
 @app.context_processor
 def inject_globals():
-	return {"TOOLS": [t.schema for t in chatpad.toolbox.tools], "MODELS": chatpad.free_models}
+	return {"TOOLS": [t.schema for t in chatpad.toolbox.tools], "MODELS": chatpad.models}
 
 @app.template_filter('markdown')
 def markdown_filter(text):
@@ -178,44 +164,12 @@ def raw_view(session_id):
     return export_text, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 
-ICON_DIR = os.path.join(ROOT, "@@", "models")
-
-def model_icons():
-	icons = {}
-	for f in os.listdir(ICON_DIR):
-		icons[os.path.splitext(f)[0]] = f"/@@/models/{f}"
-	return icons
-
-
-def sse(records, icons):
-	names = model_names()
-	context_lengths = model_context_lengths()
-	for record in records:
-		model = record.get("model")
-		record["icon"] = model_icon_url(icons, model)
-		record["model_name"] = names.get(model) if model else None
-		record["context_length"] = context_lengths.get(model) if model else None
-		yield f"data: {json.dumps(record)}\n\n"
-
-
-def model_names():
-	# id -> display name, built once per stream so the client can label a turn
-	# with the model's name instead of its raw id.
-	return {m.id: (m.name or m.id) for m in chatpad.models}
-
-
-def model_context_lengths():
-	# id -> context window, built once per stream so the client can render the
-	# same "Max" figure the server-side template shows.
-	return {m.id: getattr(m, "context_length", None) for m in chatpad.models}
-
-
 @app.route('/models')
 def models_view():
 	chatpad.openrouter.load_models()
 	chatpad.deepseek.load_models()
 	chatpad.local.load_models()
-	for slug in {s for s in (model_icon_slug(m.id) for m in chatpad.models) if s}:
+	for slug in {s for s in (m.brand for m in chatpad.models) if s}:
 		if any(f.startswith(f"{slug}.") for f in os.listdir(ICON_DIR)):
 			continue
 		try:
@@ -237,17 +191,17 @@ def models_view():
 				f.write(img)
 		except Exception:
 			pass
-	return render_template('models.html', models=chatpad.models, icons=model_icons())
+	return render_template('models.html', models=chatpad.models)
 
 @app.route('/sessions')
 def sessions_view():
 	sessions = chatpad.group_by_day(archived=False)
-	return render_template('sessions.html', sessions=sessions, archived=False, icons=model_icons())
+	return render_template('sessions.html', sessions=sessions, archived=False)
 
 @app.route('/archive')
 def archive():
 	sessions = chatpad.group_by_day(archived=True)
-	return render_template('sessions.html', sessions=sessions, archived=True, icons=model_icons())
+	return render_template('sessions.html', sessions=sessions, archived=True)
 
 @app.route('/session/<session_id>')
 @app.route('/archive/<session_id>')
@@ -262,7 +216,7 @@ def chat_view(session_id=None):
 	session = Session(session_id) if session_id else None
 	messages = session.messages if session else []
 	blocks = [b for m in messages for b in m.blocks]
-	model_list = chatpad.free_models
+	model_list = chatpad.models
 	default_model = next((b["model"] for b in reversed(blocks) if b.get("model")), None)
 	if default_model:
 		pass
@@ -276,7 +230,6 @@ def chat_view(session_id=None):
 						   archived=session.archived if session else False,
 						   turns=[m.blocks for m in messages],
 						   default_model=default_model,
-						   icons=model_icons(),
 						   pending_tool_calls=messages[-1].pending if messages else None)
 
 @app.route('/api/markdown', methods=['POST'])
@@ -289,7 +242,7 @@ def api_models():
 	chatpad.openrouter.load_models()
 	chatpad.deepseek.load_models()
 	chatpad.local.load_models()
-	for slug in {s for s in (model_icon_slug(m.id) for m in chatpad.models) if s}:
+	for slug in {s for s in (m.brand for m in chatpad.models) if s}:
 		if any(f.startswith(f"{slug}.") for f in os.listdir(ICON_DIR)):
 			continue
 		try:
@@ -312,9 +265,11 @@ def api_models():
 		except Exception:
 			pass
 	result = []
-	for m in chatpad.free_models:
+	for m in chatpad.models:
 		fields = dict(vars(m))
 		fields["provider"] = type(fields["provider"]).__name__
+		fields["brand"] = m.brand
+		fields["icon"] = m.icon
 		result.append(fields)
 	return jsonify(result)
 
@@ -327,13 +282,6 @@ def api_stop_session(session_id):
 def api_session_setting_model(session_id):
 	settings = Session(session_id).settings
 	settings.model = request.get_json()['value']
-	settings.save()
-	return jsonify({"uuid": session_id})
-
-@app.route('/api/sessions/<session_id>/settings/system_model', methods=['POST'])
-def api_session_setting_system_model(session_id):
-	settings = Session(session_id).settings
-	settings.system_model = request.get_json()['value']
 	settings.save()
 	return jsonify({"uuid": session_id})
 

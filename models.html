@@ -2,7 +2,7 @@
 
 {% block title %}Models{% endblock %}
 
-{% macro models_table(models, icons) %}
+{% macro models_table(models) %}
 	<table>
 		<thead>
 			<tr>
@@ -24,9 +24,8 @@
 		{% for model in models %}
 			<tr>
 				<td>
-					{% set icon = model_icon_url(icons, model.id) %}
 					<h4>{{ model.name }}</h4>
-					<span class="model-description">{% if icon %}<img class="model-icon" src="{{ icon }}" alt="">{% endif %}{{ model.description }}</span>
+					<span class="model-description">{% if model.icon %}<img class="model-icon" src="/@@/models/{{ model.icon }}" alt="">{% endif %}{{ model.description }}</span>
 				</td>
 				<td>{{ model.context_length|format_number }}</td>
 
@@ -77,8 +76,8 @@
 	{% set free = models | selectattr('free') | list %}
 	{% set other = models | rejectattr('free') | list %}
 	<h1>Free Models ({{ free|length }})</h1>
-	{{ models_table(free, icons) }}
+	{{ models_table(free) }}
 
 	<h1>Other Models ({{ other|length }})</h1>
-	{{ models_table(other, icons) }}
+	{{ models_table(other) }}
 {% endblock %}

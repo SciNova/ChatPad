@@ -1,19 +1,7 @@
 {% set selected_id = default_model or MODELS[0].id %}
-{% set selected_icon = model_icon_url(icons, selected_id) %}
+{% set selected_model = chatpad.model(selected_id) %}
+{% set selected_icon = ('/@@/models/' ~ selected_model.icon) if selected_model and selected_model.icon else None %}
 <div class="chatbox">
-
-<div class="chatbox-top">
-    <div id="system-model-link" onclick="chatbox.toggleSystemModelList()"><img src="" alt="" hidden><span>none</span></div>
-    <div class="menu hidden" id="system-model-menu">
-        <div class="action" onclick="chatbox.toggleSystemModelList()"><i data-lucide="x"></i></div>
-        <div onclick="chatbox.toggleSystemModelList()">Models</div>
-        <div class="model-toggle" data-id="" data-name="none" onclick="chatbox.selectSystemModel(this)">none</div>
-        {% for model in MODELS %}
-            {% set icon = model_icon_url(icons, model.id) %}
-            <div class="model-toggle" data-id="{{ model.id }}" data-name="{{ model.name }}" onclick="chatbox.selectSystemModel(this)">{% if icon %}<img src="{{ icon }}" alt="">{% endif %}{{ model.name }}</div>
-        {% endfor %}
-    </div>
-</div>
 
 <form id="chat-form" data-session-id="{{ session_id or '' }}" action="{% if session_id %}/api/{{ session_id }}/message{% else %}/api/message{% endif %}" method="post">
     <div class="chatbox-input">
@@ -25,24 +13,19 @@
 
     <div class="menu hidden" id="model-menu">
         <div class="action" onclick="chatbox.toggleModelList()"><i data-lucide="x"></i></div>
-        <div>OpenRouter</div>
-        {% for model in MODELS if model.id.split('/')[0] == 'openrouter' %}
-            {% set icon = model_icon_url(icons, model.id) %}
-            <div class="model-toggle" data-id="{{ model.id }}" data-name="{{ model.name }}" onclick="chatbox.selectModel(this)"{% if model.id == selected_id %} data-selected{% endif %}>{% if icon %}<img src="{{ icon }}" alt="">{% endif %}{{ model.name }}</div>
-        {% endfor %}
-
-        <div>DeepSeek</div>
-        {% for model in MODELS if model.id.split('/')[0] == 'deepseek' %}
-            {% set icon = model_icon_url(icons, model.id) %}
-            <div class="model-toggle" data-id="{{ model.id }}" data-name="{{ model.name }}" onclick="chatbox.selectModel(this)"{% if model.id == selected_id %} data-selected{% endif %}>{% if icon %}<img src="{{ icon }}" alt="">{% endif %}{{ model.name }}</div>
-        {% endfor %}
-
-        <div>Local</div>
-        {% for model in MODELS if model.id.split('/')[0] == 'local' %}
-            {% set icon = model_icon_url(icons, model.id) %}
-            <div class="model-toggle" data-id="{{ model.id }}" data-name="{{ model.name }}" onclick="chatbox.selectModel(this)"{% if model.id == selected_id %} data-selected{% endif %}>{% if icon %}<img src="{{ icon }}" alt="">{% endif %}{{ model.name }}</div>
-        {% endfor %}
+        <div id="model-menu-list"></div>
     </div>
+
+    <script type="text/x-handlebars-template" id="model-menu-template">
+        {% raw %}
+        {{#each providers}}
+            <div>{{name}}</div>
+            {{#each models}}
+                <div class="model-toggle" data-id="{{id}}" data-name="{{name}}" onclick="chatbox.selectModel(this)"{{#if (eq id ../../selectedModelId)}} data-selected{{/if}}>{{#if icon}}<img src="/@@/models/{{icon}}" alt="">{{/if}}{{name}}</div>
+            {{/each}}
+        {{/each}}
+        {% endraw %}
+    </script>
 
     <div class="menu hidden" id="tools-menu">
         <div class="action" onclick="chatbox.toggleToolsList()"><i data-lucide="x"></i></div>
@@ -61,6 +44,8 @@
 
         <div class="action" id="mode-toggle" data-mode="manual" onclick="chatbox.toggleMode(this)" title="Manual: approve each tool call"><i data-lucide="shield-check"></i></div>
         <input type="hidden" name="mode" value="manual">
+
+        <div class="action" id="paid-toggle" onclick="this.classList.toggle('enabled')" title="Free models only"><i data-lucide="dollar-sign"></i></div>
 
         <div class="action" id="tools-button" onclick="chatbox.toggleToolsList()" title="Tools"><i data-lucide="wrench"></i></div>
 

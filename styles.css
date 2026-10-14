@@ -352,6 +352,10 @@ nav a.active {
 	color: var(--enabled);
 	}
 
+#paid-toggle.enabled {
+	color: var(--warning);
+	}
+
 .action[disabled] {
 	opacity: 0.3;
 	cursor: default;
@@ -362,7 +366,7 @@ nav a.active {
 	color: var(--warning);
 	}
 
-#model-link, #system-model-link {
+#model-link {
 	cursor: pointer;
 	user-select: none;
 	font-size: 0.8rem;
@@ -371,16 +375,6 @@ nav a.active {
 
 #reasoning-toggle {
 	margin-left: auto;
-	}
-
-.chatbox-top {
-	display: none;
-	gap: 12px;
-	}
-
-.chatbox-top > div {
-	cursor: pointer;
-	user-select: none;
 	}
 
 .chatbox-input {
@@ -420,6 +414,11 @@ nav a.active {
 
 #model-menu .enabled, #tools-menu .enabled {
 	color: var(--enabled);
+	}
+
+#model-menu {
+	max-height: 50vh;
+	overflow-y: auto;
 	}
 
 .chatbox form {
