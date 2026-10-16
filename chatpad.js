@@ -1,12 +1,47 @@
+function formatNumber(n) {
+	if (n === null || n === undefined) return ''
+	if (n === 0) return '0'
+	if (n % 1024 === 0) {
+		if (n < 1024) return `${n} B`
+		const units = ['KiB', 'MiB', 'GiB', 'TiB']
+		let i = -1
+		while (n >= 1024 && i < units.length - 1) {
+			n /= 1024
+			i++
+		}
+		const s = n.toFixed(1).replace(/\.?0+$/, '')
+		return `${s} ${units[i]}`
+	} else {
+		if (n < 1000) return String(Math.trunc(n))
+		const units = ['K', 'M', 'B', 'T']
+		let i = -1
+		while (n >= 1000 && i < units.length - 1) {
+			n /= 1000
+			i++
+		}
+		const s = n.toFixed(1).replace(/\.?0+$/, '')
+		return `${s}${units[i]}`
+	}
+}
+
 Handlebars.registerHelper('eq', (a, b) => a === b)
+Handlebars.registerHelper('formatNumber', formatNumber)
 
 function renderModelMenu() {
 	const list = document.getElementById('model-menu-list')
 	if (!list || !chatpad) return
 	const source = document.getElementById('model-menu-template').innerHTML
 	const selectedModelId = document.querySelector('[name="model"]')?.value || null
+	const paidOnly = document.getElementById('paid-toggle')?.classList.contains('enabled')
+	const models = paidOnly ? chatpad.paidModels : chatpad.freeModels
+	const providers = [...new Set(models.map(m => m.provider))]
+		.map(p => ({ name: p.name, models: models.filter(m => m.provider === p) }))
+	const sortByPrice = document.getElementById('sort-toggle')?.classList.contains('enabled')
+	if (sortByPrice) {
+		providers.forEach(p => p.models.sort((a, b) => a.price - b.price))
+	}
 	const render = Handlebars.compile(source)
-	list.innerHTML = render({ providers: chatpad.providers, selectedModelId })
+	list.innerHTML = render({ providers, selectedModelId, paidOnly })
 }
 
 class Turn {
@@ -85,6 +120,14 @@ class ChatPad {
 
 	get models() {
 		return this.providers.flatMap(p => p.models)
+	}
+
+	get freeModels() {
+		return this.models.filter(m => m.free)
+	}
+
+	get paidModels() {
+		return this.models.filter(m => !m.free)
 	}
 
 	model(id) {
@@ -470,6 +513,7 @@ class ToolTurnView {
 			case 'read_file': return `read ${args.path}`
 			case 'write_file': return `write ${args.path}`
 			case 'edit_file': return `edit ${args.path}`
+			case 'edit_file_range': return `replace lines ${args.start_line}-${args.end_line} in ${args.path}`
 			case 'append_file': return `append ${args.path}`
 			case 'rename_file': return `rename ${args.path} to ${args.new_path}`
 			case 'copy_file': return `copy ${args.path} to ${args.new_path}`
@@ -492,15 +536,17 @@ class ToolTurnView {
 
 	// The second line, shown only when there's something to show. Each tool
 	// is named here explicitly: read/get/download/calculator/todo/run_python/
-	// run_command/light_status show their result; write/edit/append show the
-	// argument being written. rename, copy, delete, make_folder, remove_folder,
-	// light_on, light_off have nothing beyond "it happened" and are left out.
+	// run_command/light_status show their result; write/edit/edit_file_range/
+	// append show the argument being written. rename, copy, delete, make_folder,
+	// remove_folder, light_on, light_off have nothing beyond "it happened" and
+	// are left out.
 	contentText() {
 		if (this.turn.result && this.turn.result.error) return this.turn.result.error.message
 		const args = JSON.parse(this.turn.arguments || '{}')
 		switch (this.turn.tool) {
 			case 'write_file': return args.content
 			case 'edit_file': return args.new
+			case 'edit_file_range': return args.new
 			case 'append_file': return args.content
 			case 'read_file':
 			case 'get_url':

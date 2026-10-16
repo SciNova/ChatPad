@@ -270,6 +270,7 @@ def api_models():
 		fields["provider"] = type(fields["provider"]).__name__
 		fields["brand"] = m.brand
 		fields["icon"] = m.icon
+		fields["price"] = m.price
 		result.append(fields)
 	return jsonify(result)
 
@@ -339,6 +340,11 @@ def api_resume_session(session_id):
 def api_archive_session(session_id):
 	Session(session_id).archive()
 	return redirect('/sessions')
+
+@app.route('/api/sessions/archive-all', methods=['POST'])
+def api_archive_all():
+	archived, skipped = chatpad.archive_all()
+	return redirect(f'/sessions?archived={archived}&skipped={skipped}')
 
 @app.route('/api/sessions/<session_id>/unarchive', methods=['POST'])
 def api_unarchive_session(session_id):

@@ -13,16 +13,25 @@
 
     <div class="menu hidden" id="model-menu">
         <div class="action" onclick="chatbox.toggleModelList()"><i data-lucide="x"></i></div>
+        <div class="action" id="paid-toggle" onclick="this.classList.toggle('enabled'); renderModelMenu()" title="Free models only"><i data-lucide="dollar-sign"></i></div>
+        <div class="action" id="sort-toggle" onclick="this.classList.toggle('enabled'); renderModelMenu()" title="Sort by price"><i data-lucide="arrow-up-down"></i></div>
         <div id="model-menu-list"></div>
     </div>
 
     <script type="text/x-handlebars-template" id="model-menu-template">
         {% raw %}
         {{#each providers}}
-            <div>{{name}}</div>
-            {{#each models}}
-                <div class="model-toggle" data-id="{{id}}" data-name="{{name}}" onclick="chatbox.selectModel(this)"{{#if (eq id ../../selectedModelId)}} data-selected{{/if}}>{{#if icon}}<img src="/@@/models/{{icon}}" alt="">{{/if}}{{name}}</div>
-            {{/each}}
+            <table>
+                <tr><th colspan="{{#if ../paidOnly}}4{{else}}3{{/if}}">{{name}}</th></tr>
+                {{#each models}}
+                    <tr class="model-toggle" data-id="{{id}}" data-name="{{name}}" onclick="chatbox.selectModel(this)"{{#if (eq id ../../selectedModelId)}} data-selected{{/if}}>
+                        <td>{{#if icon}}<img src="/@@/models/{{icon}}" alt="">{{/if}}</td>
+                        <td>{{name}}</td>
+                        <td>{{formatNumber context_length}}</td>
+                        {{#if ../../paidOnly}}<td>{{price}}</td>{{/if}}
+                    </tr>
+                {{/each}}
+            </table>
         {{/each}}
         {% endraw %}
     </script>
@@ -44,8 +53,6 @@
 
         <div class="action" id="mode-toggle" data-mode="manual" onclick="chatbox.toggleMode(this)" title="Manual: approve each tool call"><i data-lucide="shield-check"></i></div>
         <input type="hidden" name="mode" value="manual">
-
-        <div class="action" id="paid-toggle" onclick="this.classList.toggle('enabled')" title="Free models only"><i data-lucide="dollar-sign"></i></div>
 
         <div class="action" id="tools-button" onclick="chatbox.toggleToolsList()" title="Tools"><i data-lucide="wrench"></i></div>
 

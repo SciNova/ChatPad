@@ -21,7 +21,7 @@ from openrouter import Model, http_error
 ##     before. After IDLE_TIMEOUT seconds with no request, the loaded model is
 ##     shut down to free the RAM; the next request pays the load cost again.
 
-LLAMA_SERVER = "/data/data/com.termux/files/home/llama.cpp/build/bin/llama-server"
+LLAMA_SERVER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "llama-server")
 MODELS_DIR = "/data/data/com.termux/files/home/models"
 HOST = "127.0.0.1"
 PORT = 8080
@@ -32,8 +32,11 @@ READY_TIMEOUT = 60   # seconds to wait for a freshly-started server to accept re
 WATCHDOG_INTERVAL = 15
 
 MODEL_CONFIGS = [
+	{"name": "Qwen2.5-0.5B-Instruct-Q2_K", "file": "Qwen2.5-0.5B-Instruct-Q2_K.gguf", "context_length": 4096},
+	{"name": "Qwen3-0.6B-Q4_K_M", "file": "Qwen3-0.6B-Q4_K_M.gguf", "context_length": 4096},
 	{"name": "Qwen3.5-0.8B-Q4_K_M", "file": "Qwen3.5-0.8B-Q4_K_M.gguf", "context_length": 4096},
 	{"name": "Qwen3.5-2B-Q4_K_M", "file": "Qwen3.5-2B-Q4_K_M.gguf", "context_length": 4096},
+	{"name": "Qwen3.5-4B-Q6_K", "file": "Qwen3.5-4B-Q6_K.gguf", "context_length": 4096},
 ]
 
 

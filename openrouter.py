@@ -71,6 +71,12 @@ class Model:
 		matches = glob.glob(os.path.join(ICON_DIR, f"{self.brand}.*"))
 		return os.path.basename(matches[0]) if matches else None
 
+	@property
+	def price(self):
+		fields = ('prompt', 'completion', 'internal_reasoning')
+		total = sum(float(self.pricing.get(k) or 0) for k in fields)
+		return round(total * 1_000_000, 2)
+
 	def message(self, messages, think, tools):
 		real_id = self.id.split('/', 1)[1]
 		return self.provider.message(messages, real_id, think, tools)
@@ -101,7 +107,7 @@ class OpenRouter:
 
 			# Base pricing: all keys except 'overrides'
 			base_pricing = {
-				k: (None if v == -1 else v)
+				k: (None if v in (-1, "-1") else v)
 				for k, v in raw_pricing.items()
 				if k != 'overrides'
 			}
@@ -119,7 +125,7 @@ class OpenRouter:
 						cond[k] = v
 					else:
 						# Normalize -1 to None for price fields
-						price_ov[k] = None if v == -1 else v
+						price_ov[k] = None if v in (-1, "-1") else v
 				overrides_conditions.append(cond)
 				overridden_pricing.append(price_ov)
 

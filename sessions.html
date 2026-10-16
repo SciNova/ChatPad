@@ -8,8 +8,21 @@
 		<a href="/sessions">View active sessions</a>
 	{% else %}
 		<a href="/archive">View archive</a>
+		<form action="/api/sessions/archive-all" method="post"
+				onsubmit="return confirm('Archive all active sessions?')">
+			<button type="submit">Archive all</button>
+		</form>
 	{% endif %}
 </div>
+{% if not archived and request.args.get('archived') %}
+<div class="session-row">
+	<small>
+		Archived {{ request.args.get('archived') }} session(s)
+		{% set skipped = request.args.get('skipped') %}
+		{% if skipped and skipped != '0' %} &mdash; {{ skipped }} busy skipped{% endif %}.
+	</small>
+</div>
+{% endif %}
 <div id="sessions-table">
 {% for day, group in sessions %}
 	<h3>{{ day|format_day }}</h3>

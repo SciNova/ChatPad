@@ -139,6 +139,13 @@ nav a.active {
 	margin-right: 4px;
 }
 
+.session-row:has(> form) {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	justify-content: space-between;
+}
+
 .session {
 	display: flex;
 	flex-direction: column;
@@ -352,10 +359,6 @@ nav a.active {
 	color: var(--enabled);
 	}
 
-#paid-toggle.enabled {
-	color: var(--warning);
-	}
-
 .action[disabled] {
 	opacity: 0.3;
 	cursor: default;
@@ -416,8 +419,21 @@ nav a.active {
 	color: var(--enabled);
 	}
 
+#paid-toggle.enabled {
+	color: var(--warning);
+	}
+
 #model-menu {
 	max-height: 50vh;
+	display: flex;
+	flex-direction: column;
+	}
+
+#model-menu.hidden {
+	display: none;
+	}
+
+#model-menu-list {
 	overflow-y: auto;
 	}
 

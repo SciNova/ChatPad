@@ -5,3 +5,4 @@ archive/
 models.json
 __pycache__/
 system/
+llama-server

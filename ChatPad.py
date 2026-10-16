@@ -1,4 +1,5 @@
 from datetime import datetime, timezone, timedelta
+import csv
 import os
 import re
 import threading
@@ -15,6 +16,7 @@ import time
 import ast
 import math
 import operator
+import difflib
 import requests
 import markdown
 from diff_match_patch import diff_match_patch
@@ -27,6 +29,8 @@ MARKDOWN_EXTENSIONS = ['tables', 'fenced_code', 'codehilite', 'nl2br']
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSIONS_FOLDER = os.path.join(APP_DIR, "sessions")
+SESSIONS_CSV = os.path.join(SESSIONS_FOLDER, "sessions.csv")
+INDEX_FIELDS = ("uuid", "created_at", "archived", "title", "models")
 SESSION_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$')
 MESSAGE_PATTERN = re.compile(r'^([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12})\.json$')
 
@@ -45,6 +49,7 @@ TOOL_SUMMARY = {
 	"read_file": ("read", "path"),
 	"write_file": ("write", "path"),
 	"edit_file": ("edit", "path"),
+	"edit_file_range": ("replace lines", "path", "start_line", "end_line"),
 	"append_file": ("append", "path"),
 	"rename_file": ("rename", "path", "new_path"),
 	"copy_file": ("copy", "path", "new_path"),
@@ -108,31 +113,12 @@ class ChatPad:
 		return self.openrouter.free_models + self.deepseek.free_models + self.local.free_models
 
 	def list(self, archived=False):
-		root = SESSIONS_FOLDER
-		sessions = []
-		if not os.path.isdir(root):
-			return sessions
-		seen = set()
-		for name in os.listdir(root):
-			if name.endswith(".tar.bz2"):
-				session_id = name[:-len(".tar.bz2")]
-			elif SESSION_PATTERN.match(name) and os.path.isdir(os.path.join(root, name)):
-				session_id = name
-			else:
-				continue
-			if not SESSION_PATTERN.match(session_id) or session_id in seen:
-				continue
-			seen.add(session_id)
-			session = Session(uuid=session_id)
-			if session.archived != archived:
-				continue
-			prompt = next((b["content"] for m in session.messages for b in m.blocks if b["type"] == "prompt"), "")
-			title = "(empty)"
-			if prompt:
-				title = prompt[:30] + ("..." if len(prompt) > 30 else "")
-			sessions.append((session_id, session.timestamp, title, session.models))
-		sessions.sort(key=lambda x: x[1], reverse=True)
-		return sessions
+		with open(SESSIONS_CSV, newline="", encoding="utf-8") as f:
+			rows = [row for row in csv.DictReader(f)
+					if row["archived"] == ("1" if archived else "0")]
+		rows.sort(key=lambda row: row["created_at"], reverse=True)
+		return [(row["uuid"], row["created_at"], row["title"],
+				[m for m in row["models"].split("|") if m]) for row in rows]
 
 	def group_by_day(self, archived=False):
 		groups = []
@@ -143,6 +129,18 @@ class ChatPad:
 			else:
 				groups.append((day, [session]))
 		return groups
+
+	def archive_all(self):
+		archived = 0
+		skipped = 0
+		for session_id, _, _, _ in self.list(archived=False):
+			session = Session(uuid=session_id)
+			try:
+				session.archive()
+				archived += 1
+			except ValueError:
+				skipped += 1  # busy sessions can't be packed mid-stream
+		return archived, skipped
 
 	def message(self, prompt, model, reasoning=True, session=None, tools=None, mode="auto", pause_requested=None):
 		session_obj = Session(uuid=session)
@@ -316,9 +314,70 @@ class Session:
 		if self.status == "busy":
 			raise ValueError("cannot archive a busy session")
 		self.pack()
+		self.write_index_row(archived=True)
 
 	def unarchive(self):
 		self.unpack()
+		self.write_index_row(archived=False)
+
+	def read_index_row(self):
+		if not os.path.isfile(SESSIONS_CSV):
+			return None
+		with open(SESSIONS_CSV, newline="", encoding="utf-8") as f:
+			for row in csv.DictReader(f):
+				if row["uuid"] == self.uuid:
+					return row
+		return None
+
+	def write_index_row(self, row=None, archived=None):
+		if row is None:
+			row = self.read_index_row()
+		row = dict(row) if row else {"archived": "0"}
+		if archived is not None:
+			row["archived"] = "1" if archived else "0"
+		row["uuid"] = self.uuid
+		if not row.get("created_at"):
+			row["created_at"] = self.timestamp
+		os.makedirs(SESSIONS_FOLDER, exist_ok=True)
+		rows = []
+		if os.path.isfile(SESSIONS_CSV):
+			with open(SESSIONS_CSV, newline="", encoding="utf-8") as f:
+				rows = [{k: r.get(k, "") for k in INDEX_FIELDS} for r in csv.DictReader(f)]
+		for i, r in enumerate(rows):
+			if r["uuid"] == self.uuid:
+				rows[i] = {k: row.get(k, "") for k in INDEX_FIELDS}
+				break
+		else:
+			rows.append({k: row.get(k, "") for k in INDEX_FIELDS})
+		tmp = SESSIONS_CSV + "." + str(threading.get_ident()) + ".tmp"
+		with open(tmp, "w", newline="", encoding="utf-8") as f:
+			writer = csv.DictWriter(f, fieldnames=INDEX_FIELDS)
+			writer.writeheader()
+			writer.writerows(rows)
+		os.replace(tmp, SESSIONS_CSV)
+
+	def update_index_from(self, message):
+		row = self.read_index_row() or {"uuid": self.uuid, "created_at": self.timestamp, "archived": "0"}
+		models = set(row.get("models", "").split("|")) - {""}
+		changed = False
+		if not row.get("title"):
+			for turn in message.turns:
+				if isinstance(turn, MessageTurn) and turn.prompt:
+					prompt = turn.prompt
+					row["title"] = prompt[:30] + ("..." if len(prompt) > 30 else "")
+					changed = True
+					break
+		for turn in message.turns:
+			if isinstance(turn, MessageTurn) and turn.model and turn.model not in models:
+				models.add(turn.model)
+				changed = True
+		if changed:
+			row["models"] = "|".join(sorted(models))
+			self.write_index_row(row)
+		else:
+			# Title and models already current; still make sure the row exists
+			# (first save on a fresh install has nothing to change).
+			self.write_index_row(row)
 
 	@property
 	def messages(self):
@@ -442,6 +501,7 @@ class Message:
 		with open(tmp, "w") as f:
 			json.dump(self.to_dict(), f, indent=2)
 		os.replace(tmp, self.path)
+		self.session.update_index_from(self)
 
 	def next_uuid(self):
 		dt = datetime.now(timezone.utc)
@@ -786,8 +846,10 @@ class Toolbox:
 					{"path": {"type": "string"}}, self.read_file),
 			Tool("write_file", "Write file", "Create a file, or replace it if it exists.",
 					{"path": {"type": "string"}, "content": {"type": "string"}}, self.write_file),
-			Tool("edit_file", "Edit file", "Replace one piece of text in a file. `old` must appear exactly once; include enough surrounding text to make it unique.",
+			Tool("edit_file", "Edit file", "Replace one piece of text in a file. `old` must appear exactly once; include enough surrounding text to make it unique. Read the file first.",
 					{"path": {"type": "string"}, "old": {"type": "string"}, "new": {"type": "string"}}, self.edit_file),
+			Tool("edit_file_range", "Replace lines", "Replace an inclusive, 1-based range of lines with new text. Use this instead of edit_file when the change spans whole lines.",
+					{"path": {"type": "string"}, "start_line": {"type": "integer"}, "end_line": {"type": "integer"}, "new": {"type": "string"}}, self.edit_file_range),
 			Tool("append_file", "Append file", "Add text to the end of a file, creating it if needed.",
 					{"path": {"type": "string"}, "content": {"type": "string"}}, self.append_file),
 			Tool("rename_file", "Rename file", "Rename a file. Fails if the new name already exists.",
@@ -860,11 +922,52 @@ class Toolbox:
 		with open(full, "r", encoding="utf-8") as f:
 			text = f.read()
 		count = text.count(old)
-		if count != 1:
-			raise ToolError(f"text found {count} times in {path}; it must appear exactly once")
+		if count == 0:
+			lines = text.splitlines()
+			best_ratio, best_line, best_text = 0.0, None, ""
+			for number, line in enumerate(lines, 1):
+				ratio = difflib.SequenceMatcher(None, old.strip(), line.strip()).quick_ratio()
+				if ratio > best_ratio:
+					best_ratio, best_line, best_text = ratio, number, line
+			if best_line is not None and best_ratio > 0.6:
+				raise ToolError(f"text not found in {path}. Closest match is line {best_line}: `{best_text.strip()}`. Read the file and copy the exact text for `old`.")
+			raise ToolError(f"text not found in {path}. Read the file and copy the exact text for `old`.")
+		if count > 1:
+			locations = []
+			start = 0
+			while True:
+				index = text.find(old, start)
+				if index == -1:
+					break
+				locations.append(text.count("\n", 0, index) + 1)
+				start = index + 1
+			raise ToolError(f"text found {count} times in {path} (lines {', '.join(str(n) for n in locations)}); it must appear exactly once. Include more surrounding text to make it unique, or use edit_file_range.")
 		with open(full, "w", encoding="utf-8") as f:
-			f.write(text.replace(old, new))
+			f.write(text.replace(old, new, 1))
 		return f"edited {path}"
+
+	def edit_file_range(self, path, start_line, end_line, new):
+		full = self._resolve(path)
+		with open(full, "r", encoding="utf-8") as f:
+			lines = f.readlines()
+		total = len(lines)
+		if start_line < 1 or end_line < start_line or end_line > total:
+			raise ToolError(f"invalid line range: {path} has {total} lines, got {start_line}-{end_line}")
+		newline = "\n"
+		for line in lines:
+			if line.endswith("\r\n"):
+				newline = "\r\n"
+			elif line.endswith("\n"):
+				newline = "\n"
+			break
+		body = newline.join(new.split("\n"))
+		head = "".join(lines[:start_line - 1])
+		tail = "".join(lines[end_line:])
+		if tail and body and not body.endswith("\n"):
+			body += newline
+		with open(full, "w", encoding="utf-8") as f:
+			f.write(head + body + tail)
+		return f"replaced lines {start_line}-{end_line} in {path}"
 
 	def append_file(self, path, content):
 		full = self._resolve(path)
