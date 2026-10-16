@@ -16,7 +16,7 @@ from openrouter import OpenRouter
 from deepseek import DeepSeek
 from local import Qwen
 
-from Tools import Toolbox, tool_summary
+from Tools import Toolbox
 
 MARKDOWN_EXTENSIONS = ['tables', 'fenced_code', 'codehilite', 'nl2br']
 
@@ -492,7 +492,6 @@ class Message:
 			if run:
 				blocks.append({"type": "tool_call", "content": turn.response,
 						"tool_calls": [{"id": t.uuid, "type": "function", "function": {"name": t.tool, "arguments": t.arguments}} for t in run],
-						"labels": {t.uuid: tool_summary(t.tool, t.arguments) for t in run},
 						"uuid": turn.uuid, "timestamp": turn.timestamp, "session": self.session.uuid})
 				for t in run:
 					blocks.append({"type": "tool_result", "tool_call_id": t.uuid, "name": t.tool,
@@ -621,7 +620,6 @@ class Message:
 
 				yield {"type": "tool_call", "content": turn.response,
 						"tool_calls": [{"id": t.uuid, "type": "function", "function": {"name": t.tool, "arguments": t.arguments}} for t in run_turns],
-						"labels": {t.uuid: tool_summary(t.tool, t.arguments) for t in run_turns},
 						"uuid": turn.uuid, "timestamp": turn.timestamp, "session": session_uuid}
 
 				if mode == "manual":

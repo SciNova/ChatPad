@@ -7,7 +7,6 @@ from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 
 from ChatPad import ChatPad, Session as BackendSession
-from Tools import tool_summary
 
 
 def split_lines(fragments):
@@ -93,26 +92,28 @@ class Session:
 # No streaming/update() here - the session is fetched once and rendered top to bottom.
 
 class SessionView:
-	def __init__(self, session):
+	def __init__(self, session, toolbox):
 		self.session = session
+		self.toolbox = toolbox
 
 	def render(self):
 		lines = [("class:day", f"Session {self.session.uuid}  [{self.session.status}]\n")]
 		for message in self.session.messages:
-			lines += MessageView(message).render()
+			lines += MessageView(message, self.toolbox).render()
 		return lines
 
 
 class MessageView:
-	def __init__(self, message):
+	def __init__(self, message, toolbox):
 		self.message = message
+		self.toolbox = toolbox
 
 	def render(self):
 		lines = [("", "\n")]
 		for i, turn in enumerate(self.message.turns):
 			if i > 0:
 				lines.append(("", "\n"))
-			view = ToolTurnView(turn) if isinstance(turn, ToolTurn) else TurnView(turn)
+			view = ToolTurnView(turn, self.toolbox) if isinstance(turn, ToolTurn) else TurnView(turn)
 			lines += view.render()
 		return lines
 
@@ -142,11 +143,13 @@ class TurnView:
 
 
 class ToolTurnView:
-	def __init__(self, turn):
+	def __init__(self, turn, toolbox):
 		self.turn = turn
+		self.toolbox = toolbox
 
 	def render(self):
-		label = tool_summary(self.turn.tool, self.turn.arguments)
+		tool = self.toolbox.build(self.turn.tool, self.turn.arguments)
+		label = tool.summary if tool else self.turn.tool
 		lines = [("class:tool", f" {label} \n")]
 		result = self.turn.result
 		if isinstance(result, dict) and result.get("error"):
@@ -255,15 +258,15 @@ class DetailView(View):
 		super().__init__(chatpad)
 		self.session_id = session_id
 		backend_session = BackendSession(uuid=session_id)
-		json = {"uuid": backend_session.uuid, "archived": backend_session.archived, "status": backend_session.status,
+		json_data = {"uuid": backend_session.uuid, "archived": backend_session.archived, "status": backend_session.status,
 				"settings": backend_session.settings.to_dict(),
 				"messages": [m.to_dict() for m in backend_session.messages]}
-		self.session = Session(json)
+		self.session = Session(json_data)
 
 	def render(self):
 		if self.session is None:
 			return [("", f"\n  Session {self.session_id} not found\n")]
-		return SessionView(self.session).render()
+		return SessionView(self.session, self.chatpad.toolbox).render()
 
 
 class App:

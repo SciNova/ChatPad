@@ -7,7 +7,6 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, redirect, send_from_directory, jsonify, abort, Response
 from ChatPad import ChatPad, Session, Turn, ToolTurn
-from Tools import NO_CONTENT_TOOLS, tool_summary
 from openrouter import ICON_DIR
 import re
 import requests
@@ -63,8 +62,6 @@ def format_number(n):
 		return f"{s}{units[i]}"
 
 
-
-
 @app.template_filter('format_timestamp')
 def format_timestamp_filter(ts):
 	if not ts:
@@ -118,16 +115,14 @@ def model_name(model_id):
 def asset_version(filename):
 	return int(os.path.getmtime(os.path.join(os.path.dirname(__file__), filename)))
 
-app.jinja_env.globals['tool_summary'] = tool_summary
 app.jinja_env.globals['find_tool_result'] = find_tool_result
-app.jinja_env.globals['NO_CONTENT_TOOLS'] = NO_CONTENT_TOOLS
 app.jinja_env.globals['model_name'] = model_name
 app.jinja_env.globals['asset_version'] = asset_version
 app.jinja_env.globals['chatpad'] = chatpad
 
 @app.context_processor
 def inject_globals():
-	return {"TOOLS": [t.schema for t in chatpad.toolbox.tools], "MODELS": chatpad.models}
+	return {"TOOLS": chatpad.toolbox.schemas(), "MODELS": chatpad.models}
 
 @app.template_filter('markdown')
 def markdown_filter(text):
@@ -150,7 +145,9 @@ def raw_view(session_id):
             text_parts.append('')
         elif msg['type'] == 'tool_call':
             for call in msg.get('tool_calls') or []:
-                text_parts.append(f"[tool call] {tool_summary(call['function']['name'], call['function']['arguments'])}")
+                tool = chatpad.toolbox.build(call['function']['name'], call['function']['arguments'])
+                label = tool.summary if tool else call['function']['name']
+                text_parts.append(f"[tool call] {label}")
                 result = find_tool_result(messages, call['id'])
                 if result:
                     output = result.get('content') or ''
@@ -465,9 +462,6 @@ def rotate_keys():
 	return redirect('/chat?rotated=1')
 
 
-
-
-
 @app.route('/<path:filename>')
 def serve_file(filename):
     # First try to serve from the current working directory (URLROOT)
@@ -476,7 +470,6 @@ def serve_file(filename):
         return send_from_directory(URLROOT, filename)
     # Fallback to the application's own directory (ROOT)
     return send_from_directory(ROOT, filename)
-
 
 
 if __name__ == "__main__":

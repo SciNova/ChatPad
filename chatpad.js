@@ -44,6 +44,297 @@ function renderModelMenu() {
 	list.innerHTML = render({ providers, selectedModelId, paidOnly })
 }
 
+class Tool {
+	static name = ''
+
+	get summary() {
+		return this.constructor.name
+	}
+}
+
+class ReadFileTool extends Tool {
+	static name = 'read_file'
+
+	constructor({ file_path, offset = 1, limit = null } = {}) {
+		super()
+		this.file_path = file_path
+		this.offset = offset
+		this.limit = limit
+	}
+
+	get summary() {
+		return `read ${this.file_path}`
+	}
+}
+
+class WriteFileTool extends Tool {
+	static name = 'write_file'
+
+	constructor({ file_path, content } = {}) {
+		super()
+		this.file_path = file_path
+		this.content = content
+	}
+
+	get summary() {
+		return `write ${this.file_path}`
+	}
+}
+
+class EditFileTool extends Tool {
+	static name = 'edit_file'
+
+	constructor({ file_path, old, new: new_ } = {}) {
+		super()
+		this.file_path = file_path
+		this.old = old
+		this.new = new_
+	}
+
+	get summary() {
+		return `edit ${this.file_path}`
+	}
+}
+
+class EditFileRangeTool extends Tool {
+	static name = 'edit_file_range'
+
+	constructor({ file_path, start_line, end_line, new: new_ } = {}) {
+		super()
+		this.file_path = file_path
+		this.start_line = start_line
+		this.end_line = end_line
+		this.new = new_
+	}
+
+	get summary() {
+		return `replace lines ${this.start_line}-${this.end_line} in ${this.file_path}`
+	}
+}
+
+class AppendFileTool extends Tool {
+	static name = 'append_file'
+
+	constructor({ file_path, content } = {}) {
+		super()
+		this.file_path = file_path
+		this.content = content
+	}
+
+	get summary() {
+		return `append ${this.file_path}`
+	}
+}
+
+class RenameFileTool extends Tool {
+	static name = 'rename_file'
+
+	constructor({ file_path, new_file_path } = {}) {
+		super()
+		this.file_path = file_path
+		this.new_file_path = new_file_path
+	}
+
+	get summary() {
+		return `rename ${this.file_path} to ${this.new_file_path}`
+	}
+}
+
+class CopyFileTool extends Tool {
+	static name = 'copy_file'
+
+	constructor({ file_path, new_file_path } = {}) {
+		super()
+		this.file_path = file_path
+		this.new_file_path = new_file_path
+	}
+
+	get summary() {
+		return `copy ${this.file_path} to ${this.new_file_path}`
+	}
+}
+
+class GetUrlTool extends Tool {
+	static name = 'get_url'
+
+	constructor({ url } = {}) {
+		super()
+		this.url = url
+	}
+
+	get summary() {
+		return `get ${this.url}`
+	}
+}
+
+class DownloadUrlTool extends Tool {
+	static name = 'download_url'
+
+	constructor({ url, file_path } = {}) {
+		super()
+		this.url = url
+		this.file_path = file_path
+	}
+
+	get summary() {
+		return `download ${this.url} to ${this.file_path}`
+	}
+}
+
+class DeleteFileTool extends Tool {
+	static name = 'delete_file'
+
+	constructor({ file_path } = {}) {
+		super()
+		this.file_path = file_path
+	}
+
+	get summary() {
+		return `delete ${this.file_path}`
+	}
+}
+
+class CurrentTimeTool extends Tool {
+	static name = 'current_time'
+
+	get summary() {
+		return 'current time'
+	}
+}
+
+class CalculatorTool extends Tool {
+	static name = 'calculator'
+
+	constructor({ expression } = {}) {
+		super()
+		this.expression = expression
+	}
+
+	get summary() {
+		return `calculate ${this.expression}`
+	}
+}
+
+class TodoTool extends Tool {
+	static name = 'todo'
+
+	constructor({ action, item = null } = {}) {
+		super()
+		this.action = action
+		this.item = item
+	}
+
+	get summary() {
+		return 'todo'
+	}
+}
+
+class RunPythonTool extends Tool {
+	static name = 'run_python'
+
+	constructor({ code } = {}) {
+		super()
+		this.code = code
+	}
+
+	get summary() {
+		return `run python ${truncate(this.code, LABEL_TRUNCATE_LENGTH)}`
+	}
+}
+
+class RunCommandTool extends Tool {
+	static name = 'run_command'
+
+	constructor({ command } = {}) {
+		super()
+		this.command = command
+	}
+
+	get summary() {
+		return `run ${truncate(this.command, LABEL_TRUNCATE_LENGTH)}`
+	}
+}
+
+class MakeFolderTool extends Tool {
+	static name = 'make_folder'
+
+	constructor({ folder_path } = {}) {
+		super()
+		this.folder_path = folder_path
+	}
+
+	get summary() {
+		return `make folder ${this.folder_path}`
+	}
+}
+
+class RemoveFolderTool extends Tool {
+	static name = 'remove_folder'
+
+	constructor({ folder_path } = {}) {
+		super()
+		this.folder_path = folder_path
+	}
+
+	get summary() {
+		return `remove folder ${this.folder_path}`
+	}
+}
+
+class LightStatusTool extends Tool {
+	static name = 'light_status'
+
+	get summary() {
+		return 'light status'
+	}
+}
+
+class LightOnTool extends Tool {
+	static name = 'light_on'
+
+	get summary() {
+		return 'turn light on'
+	}
+}
+
+class LightOffTool extends Tool {
+	static name = 'light_off'
+
+	get summary() {
+		return 'turn light off'
+	}
+}
+
+class Toolbox {
+	static tools = [
+		ReadFileTool, WriteFileTool, EditFileTool, EditFileRangeTool,
+		AppendFileTool, RenameFileTool, CopyFileTool, GetUrlTool,
+		DownloadUrlTool, DeleteFileTool, CurrentTimeTool, CalculatorTool,
+		TodoTool, RunPythonTool, RunCommandTool, MakeFolderTool,
+		RemoveFolderTool, LightStatusTool, LightOnTool, LightOffTool,
+	]
+
+	constructor() {
+		this.byName = Object.fromEntries(Toolbox.tools.map(cls => [cls.name, cls]))
+	}
+
+	find(name) {
+		return this.byName[name]
+	}
+
+	build(name, rawArguments) {
+		const cls = this.find(name)
+		if (!cls) return null
+		let args
+		try {
+			args = typeof rawArguments === 'string' ? JSON.parse(rawArguments || '{}') : (rawArguments || {})
+		} catch {
+			args = {}
+		}
+		return new cls(args)
+	}
+}
+
 class Turn {
 	constructor(json, message) {
 		this.uuid = json.uuid
@@ -105,6 +396,7 @@ class Provider {
 class ChatPad {
 	constructor(records) {
 		this.providers = []
+		this.toolbox = new Toolbox()
 		const byName = {}
 		for (const record of records) {
 			const { provider: providerName, id, free, ...fields } = record
@@ -485,6 +777,7 @@ class ToolTurnView {
 		this.container = container
 		this.message_view = message_view
 		this.turn = turn
+		this.tool = chatpad.toolbox.build(turn.tool, turn.arguments)
 	}
 
 	draw() {
@@ -504,63 +797,13 @@ class ToolTurnView {
 		navigator.clipboard.writeText(clone.textContent.trim())
 	}
 
-	// The label every tool shows on its first line - verb plus the argument
-	// that matters, written out by name. Each one of our tools is named here;
-	// there is no table standing in for this knowledge.
 	label() {
-		const args = JSON.parse(this.turn.arguments || '{}')
-		switch (this.turn.tool) {
-			case 'read_file': return `read ${args.path}`
-			case 'write_file': return `write ${args.path}`
-			case 'edit_file': return `edit ${args.path}`
-			case 'edit_file_range': return `replace lines ${args.start_line}-${args.end_line} in ${args.path}`
-			case 'append_file': return `append ${args.path}`
-			case 'rename_file': return `rename ${args.path} to ${args.new_path}`
-			case 'copy_file': return `copy ${args.path} to ${args.new_path}`
-			case 'get_url': return `get ${args.url}`
-			case 'download_url': return `download ${args.url} to ${args.path}`
-			case 'delete_file': return `delete ${args.path}`
-			case 'current_time': return 'current time'
-			case 'calculator': return `calculate ${args.expression}`
-			case 'todo': return 'todo'
-			case 'run_python': return `run python ${truncate(args.code, LABEL_TRUNCATE_LENGTH)}`
-			case 'run_command': return `run ${truncate(args.command, LABEL_TRUNCATE_LENGTH)}`
-			case 'make_folder': return `make folder ${args.path}`
-			case 'remove_folder': return `remove folder ${args.path}`
-			case 'light_status': return 'light status'
-			case 'light_on': return 'turn light on'
-			case 'light_off': return 'turn light off'
-			default: return this.turn.tool
-		}
+		return this.tool ? this.tool.summary : this.turn.tool
 	}
 
-	// The second line, shown only when there's something to show. Each tool
-	// is named here explicitly: read/get/download/calculator/todo/run_python/
-	// run_command/light_status show their result; write/edit/edit_file_range/
-	// append show the argument being written. rename, copy, delete, make_folder,
-	// remove_folder, light_on, light_off have nothing beyond "it happened" and
-	// are left out.
 	contentText() {
 		if (this.turn.result && this.turn.result.error) return this.turn.result.error.message
-		const args = JSON.parse(this.turn.arguments || '{}')
-		switch (this.turn.tool) {
-			case 'write_file': return args.content
-			case 'edit_file': return args.new
-			case 'edit_file_range': return args.new
-			case 'append_file': return args.content
-			case 'read_file':
-			case 'get_url':
-			case 'download_url':
-			case 'current_time':
-			case 'calculator':
-			case 'todo':
-			case 'run_python':
-			case 'run_command':
-			case 'light_status':
-				return this.turn.result ? this.turn.result.content : null
-			default:
-				return null
-		}
+		return this.turn.result ? this.turn.result.content : null
 	}
 
 	update() {
