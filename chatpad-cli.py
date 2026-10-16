@@ -6,7 +6,8 @@ from prompt_toolkit.layout import Layout, HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 
-from ChatPad import ChatPad, Session as BackendSession, tool_summary
+from ChatPad import ChatPad, Session as BackendSession
+from Tools import tool_summary
 
 
 def split_lines(fragments):

@@ -14,7 +14,7 @@
 	--nav-bg: #ede4f7;
 	--nav-text: #222222;
 	--tool-turn-bg: #f5f5f5;
-	--tool-turn-text: #222222;
+	--tool-turn-text: #444444;
 	--info-text: #666666;
 	--enabled: #2e8b40;
 	--warning: #cc3333;
@@ -45,7 +45,7 @@
 		--nav-bg: #2b1c3d;
 		--nav-text: #e0e0e0;
 		--tool-turn-bg: #242424;
-		--tool-turn-text: #e0e0e0;
+		--tool-turn-text: #000000;
 		--info-text: #999999;
 		--enabled: #6fcf7a;
 		--warning: #ff6b6b;
@@ -177,8 +177,9 @@ nav a.active {
 
 .tool {
 	padding: 5px 10px;
-	border-radius: 4px;
+	border-radius: 2px;
 	font-size: 0.75rem;
+	font-weight: bold;
 	background: var(--tool-turn-bg);
 	color: var(--tool-turn-text);
 	max-width: 100%;
@@ -515,5 +516,3 @@ table td {
 td h4 {
 	margin: 0 0 4px;
 }
-
-

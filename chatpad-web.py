@@ -6,7 +6,8 @@ import uuid7
 from collections import defaultdict
 from datetime import datetime, timezone
 from flask import Flask, render_template, request, redirect, send_from_directory, jsonify, abort, Response
-from ChatPad import ChatPad, Session, Turn, ToolTurn, NO_CONTENT_TOOLS, tool_summary
+from ChatPad import ChatPad, Session, Turn, ToolTurn
+from Tools import NO_CONTENT_TOOLS, tool_summary
 from openrouter import ICON_DIR
 import re
 import requests
