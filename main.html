@@ -2,16 +2,26 @@
 
 {% block title %}{% if session_id %}Session {{ session_id }}{% else %}Sessions{% endif %}{% endblock %}
 
+
+
+
+
+
+
+
 {% block topbar %}
 {% if session_id %}
-    <div class="session-bar">
-        <span>
-            {{ session_id }}
-            <form action="/api/sessions/{{ session_id }}/{{ 'unarchive' if archived else 'archive' }}" method="post">
+<div class="session-bar">
+    <span>
+        {{ session_id }}
+        <span style="display: flex; gap: 15px; align-items: center;">
+            <a href="/api/sessions/{{ session_id }}/raw" style="color: inherit; text-decoration: underline; font-size: 0.8rem;">Raw</a>
+            <form action="/api/sessions/{{ session_id }}/{{ 'unarchive' if archived else 'archive' }}" method="post" style="margin: 0;">
                 <button type="submit">{{ 'Unarchive' if archived else 'Archive' }}</button>
             </form>
         </span>
-    </div>
+    </span>
+</div>
 {% endif %}
 {% endblock %}
 

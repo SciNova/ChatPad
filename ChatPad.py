@@ -1,4 +1,5 @@
 from datetime import datetime, timezone, timedelta
+import bz2
 import csv
 import os
 import re
@@ -6,7 +7,6 @@ import threading
 import uuid
 import uuid7
 import json
-import tarfile
 import shutil
 import time
 import markdown
@@ -15,7 +15,6 @@ from diff_match_patch import diff_match_patch
 from openrouter import OpenRouter
 from deepseek import DeepSeek
 from local import Qwen
-
 from Tools import Toolbox
 
 MARKDOWN_EXTENSIONS = ['tables', 'fenced_code', 'codehilite', 'nl2br']
@@ -24,8 +23,7 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSIONS_FOLDER = os.path.join(APP_DIR, "sessions")
 SESSIONS_CSV = os.path.join(SESSIONS_FOLDER, "sessions.csv")
 INDEX_FIELDS = ("uuid", "created_at", "archived", "title", "models")
-SESSION_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$')
-MESSAGE_PATTERN = re.compile(r'^([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12})\.json$')
+SESSION_SUFFIX = ".jsonl"
 
 MAX_STEPS = 50
 PATCH_INTERVAL = 0.08
@@ -49,12 +47,12 @@ class ChatPad:
 		return self.openrouter.free_models + self.deepseek.free_models + self.local.free_models
 
 	def list(self, archived=False):
+		if not os.path.isfile(SESSIONS_CSV):
+			return []
 		with open(SESSIONS_CSV, newline="", encoding="utf-8") as f:
-			rows = [row for row in csv.DictReader(f)
-					if row["archived"] == ("1" if archived else "0")]
+			rows = [row for row in csv.DictReader(f) if row["archived"] == ("1" if archived else "0")]
 		rows.sort(key=lambda row: row["created_at"], reverse=True)
-		return [(row["uuid"], row["created_at"], row["title"],
-				[m for m in row["models"].split("|") if m]) for row in rows]
+		return [(row["uuid"], row["created_at"], row["title"], [m for m in row["models"].split("|") if m]) for row in rows]
 
 	def group_by_day(self, archived=False):
 		groups = []
@@ -75,7 +73,7 @@ class ChatPad:
 				session.archive()
 				archived += 1
 			except ValueError:
-				skipped += 1  # busy sessions can't be packed mid-stream
+				skipped += 1
 		return archived, skipped
 
 	def message(self, prompt, model, reasoning=True, session=None, tools=None, mode="auto", pause_requested=None):
@@ -83,7 +81,7 @@ class ChatPad:
 		model_obj = next((m for m in self.models if m.id == model), None)
 		if model_obj is None:
 			raise ValueError(f"unknown model: {model}")
-		active_tools = [t.schema for t in self.toolbox.tools if tools is not None and t.name in tools]
+		active_tools = [t.schema() for t in self.toolbox.tools if tools is not None and t.name in tools]
 
 		msg = Message(session=session_obj)
 		msg.uuid = msg.next_uuid()
@@ -101,7 +99,7 @@ class ChatPad:
 		model_obj = next((m for m in self.models if m.id == model), None)
 		if model_obj is None:
 			raise ValueError(f"unknown model: {model}")
-		active_tools = [t.schema for t in self.toolbox.tools if tools is not None and t.name in tools]
+		active_tools = [t.schema() for t in self.toolbox.tools if tools is not None and t.name in tools]
 
 		messages = session_obj.messages
 		if not messages:
@@ -113,7 +111,7 @@ class ChatPad:
 	def resume(self, session_id, action, model, reasoning=True, tools=None, mode="auto"):
 		session_obj = Session(uuid=session_id)
 		model_obj = next((m for m in self.models if m.id == model), None)
-		active_tools = [t.schema for t in self.toolbox.tools if tools is not None and t.name in tools]
+		active_tools = [t.schema() for t in self.toolbox.tools if tools is not None and t.name in tools]
 
 		messages = session_obj.messages
 		if not messages:
@@ -151,17 +149,16 @@ class ChatPad:
 class Settings:
 	def __init__(self, session):
 		self.session = session
-		self.model = session.get_setting("model")
-		self.tools = session.get_setting("tools")
-		self.mode = session.get_setting("mode")
-		self.think = session.get_setting("think")
-		self.max_steps = session.get_setting("max_steps")
+		record = session.record()
+		self.model = record.get("model")
+		self.tools = record.get("tools")
+		self.mode = record.get("mode")
+		self.think = record.get("think")
+		self.max_steps = record.get("max_steps")
 
 	def save(self):
-		for key in ("model", "tools", "mode", "think", "max_steps"):
-			value = getattr(self, key)
-			if value is not None:
-				self.session.set_setting(key, value)
+		values = {k: v for k, v in self.to_dict().items() if v is not None}
+		self.session.set_settings(values)
 
 	def to_dict(self):
 		return {"model": self.model, "tools": self.tools,
@@ -183,46 +180,70 @@ class Session:
 		return dt.strftime("%Y%m%d%H%M%S") + f"{ms:03d}"
 
 	@property
-	def archived(self):
-		return os.path.isfile(self.archive_path) and not os.path.isdir(self.folder)
-
-	@property
-	def folder(self):
-		return os.path.join(SESSIONS_FOLDER, self.uuid)
+	def path(self):
+		return os.path.join(SESSIONS_FOLDER, self.uuid + SESSION_SUFFIX)
 
 	@property
 	def archive_path(self):
-		return self.folder + ".tar.bz2"
+		return self.path + ".bz2"
 
 	@property
-	def status_path(self):
-		return os.path.join(self.folder, "session.json")
+	def archived(self):
+		return os.path.isfile(self.archive_path) and not os.path.isfile(self.path)
 
-	def get_setting(self, key, default=None):
-		if not os.path.isfile(self.status_path):
-			return default
-		with open(self.status_path) as f:
-			return json.load(f).get(key, default)
+	def text(self):
+		if self.archived:
+			with bz2.open(self.archive_path, "rt", encoding="utf-8") as f:
+				return f.read()
+		elif os.path.isfile(self.path):
+			with open(self.path, "r", encoding="utf-8") as f:
+				return f.read()
+		return ""
 
-	def set_setting(self, key, value):
-		os.makedirs(self.folder, exist_ok=True)
-		data = {}
-		if os.path.isfile(self.status_path):
-			with open(self.status_path) as f:
-				data = json.load(f)
-		data[key] = value
-		tmp = self.status_path + "." + str(threading.get_ident()) + ".tmp"
-		with open(tmp, "w") as f:
-			json.dump(data, f)
-		os.replace(tmp, self.status_path)
+	def write_live(self, text):
+		os.makedirs(SESSIONS_FOLDER, exist_ok=True)
+		tmp = self.path + ".tmp"
+		with open(tmp, "w", encoding="utf-8") as f:
+			f.write(text)
+		os.replace(tmp, self.path)
+
+	def write_archive(self, text):
+		os.makedirs(SESSIONS_FOLDER, exist_ok=True)
+		tmp = self.archive_path + ".tmp"
+		with bz2.open(tmp, "wt", encoding="utf-8") as f:
+			f.write(text)
+		os.replace(tmp, self.archive_path)
+
+	def record(self):
+		text = self.text()
+		if not text:
+			return {"uuid": self.uuid}
+		first_line = text.split("\n", 1)[0]
+		try:
+			return json.loads(first_line)
+		except Exception:
+			return {"uuid": self.uuid}
+
+	def set_settings(self, values):
+		record = self.record()
+		record.update(values)
+		record["uuid"] = self.uuid
+		rest = self.text().split("\n", 1)
+		rest = rest[1] if len(rest) > 1 else ""
+		
+		new_text = json.dumps(record, separators=(",", ":")) + "\n" + rest
+		if self.archived:
+			self.write_archive(new_text)
+		else:
+			self.write_live(new_text)
 
 	@property
 	def status(self):
-		return self.get_setting("status", "idle")
+		return self.record().get("status", "idle")
 
 	@status.setter
 	def status(self, value):
-		self.set_setting("status", value)
+		self.set_settings({"status": value})
 
 	@property
 	def settings(self):
@@ -231,20 +252,14 @@ class Session:
 	def unpack(self):
 		if not self.archived:
 			return
-		os.makedirs(self.folder, exist_ok=True)
-		with tarfile.open(self.archive_path, "r:bz2") as tar:
-			tar.extractall(self.folder)
+		self.write_live(self.text())
 		os.remove(self.archive_path)
 
 	def pack(self):
-		if self.archived or not os.path.isdir(self.folder):
+		if self.archived or not os.path.isfile(self.path):
 			return
-		tmp = self.archive_path + ".tmp"
-		with tarfile.open(tmp, "w:bz2") as tar:
-			for name in sorted(os.listdir(self.folder)):
-				tar.add(os.path.join(self.folder, name), arcname=name)
-		os.replace(tmp, self.archive_path)
-		shutil.rmtree(self.folder)
+		self.write_archive(self.text())
+		os.remove(self.path)
 
 	def archive(self):
 		if self.status == "busy":
@@ -311,30 +326,88 @@ class Session:
 			row["models"] = "|".join(sorted(models))
 			self.write_index_row(row)
 		else:
-			# Title and models already current; still make sure the row exists
-			# (first save on a fresh install has nothing to change).
 			self.write_index_row(row)
 
 	@property
 	def messages(self):
-		if self.archived:
-			return self.archived_messages()
-		if not os.path.isdir(self.folder):
-			return []
-		filenames = sorted(f for f in os.listdir(self.folder) if MESSAGE_PATTERN.match(f))
 		messages = []
-		for filename in filenames:
-			with open(os.path.join(self.folder, filename)) as f:
-				data = json.load(f)
+		lines = self.text().splitlines()
+		for line in lines[1:]:
+			if not line.strip():
+				continue
+			try:
+				data = json.loads(line)
+			except Exception:
+				break
 			messages.append(Message.from_dict(self, data))
 		return messages
 
-	def archived_messages(self):
-		with tarfile.open(self.archive_path, "r:bz2") as tar:
-			members = sorted((m for m in tar.getmembers() if MESSAGE_PATTERN.match(m.name)),
-					key=lambda m: m.name)
-			messages = [Message.from_dict(self, json.load(tar.extractfile(m))) for m in members]
-		return messages
+	def save_message(self, message):
+		if self.archived:
+			raise ValueError("cannot save a message on an archived session")
+		
+		# Fast path for streaming: replace the last line if it matches this message
+		if os.path.isfile(self.path):
+			with open(self.path, "r+b") as f:
+				f.seek(0, 2)
+				pos = f.tell()
+				if pos > 0:
+					f.seek(pos - 1)
+					if f.read(1) == b"\n":
+						start = pos - 1
+						step = 8192
+						found = False
+						while start > 0:
+							step = min(8192, start)
+							start -= step
+							f.seek(start)
+							chunk = f.read(step)
+							idx = chunk.rfind(b"\n")
+							if idx != -1:
+								start = start + idx + 1
+								found = True
+								break
+						if found:
+							f.seek(start)
+							last_line = f.read().decode("utf-8")
+							if f'"{message.uuid}"' in last_line:
+								new_line = json.dumps(message.to_dict(), separators=(",", ":")) + "\n"
+								f.seek(start)
+								f.write(new_line.encode("utf-8"))
+								f.truncate()
+								self.update_index_from(message)
+								return
+
+		# Slow path: full rewrite
+		lines = []
+		if os.path.isfile(self.path):
+			with open(self.path, "r", encoding="utf-8") as f:
+				lines = f.read().splitlines()
+
+		record = self.record()
+		if not lines:
+			lines = [json.dumps(record, separators=(",", ":"))]
+
+		others = []
+		for line in lines[1:]:
+			if not line.strip():
+				continue
+			try:
+				data = json.loads(line)
+			except Exception:
+				continue
+			if data.get("uuid") != message.uuid:
+				others.append(data)
+
+		others.append(message.to_dict())
+		others.sort(key=lambda m: m["uuid"])
+
+		new_text = lines[0] + "\n"
+		for m in others:
+			new_text += json.dumps(m, separators=(",", ":")) + "\n"
+
+		self.write_live(new_text)
+		self.update_index_from(message)
 
 	@property
 	def blocks(self):
@@ -357,12 +430,7 @@ class Session:
 			blocks = message.blocks
 			types = {b["type"] for b in blocks}
 			if "error" in types and not types & {"response", "tool_call"}:
-				continue  # the prompt got no answer, don't send it
-			# DeepSeek's thinking mode rejects any replayed assistant message that
-			# carries tool_calls unless it also carries the reasoning_content that
-			# produced them: "The `reasoning_content` in the thinking mode must be
-			# passed back to the API" (HTTP 400). Reasoning blocks share their turn
-			# uuid with the tool_call block, so the two can be paired up here.
+				continue
 			reasoning_by_uuid = {b["uuid"]: b["content"] for b in blocks
 					if b["type"] == "reasoning" and b.get("content")}
 			entries = []
@@ -376,10 +444,6 @@ class Session:
 					skip_round = False
 					reasoning = reasoning_by_uuid.get(b["uuid"]) if think else None
 					if think and not reasoning:
-						# The model called a tool without emitting any reasoning.
-						# There is nothing to pass back, so this round cannot be
-						# replayed in thinking mode. Drop the call together with
-						# its results: a tool result with no call is invalid too.
 						skip_round = True
 						continue
 					entry = {"role": "assistant", "content": b.get("content"), "tool_calls": b["tool_calls"]}
@@ -393,9 +457,6 @@ class Session:
 				elif t == "response" and b.get("content"):
 					skip_round = False
 					entries.append({"role": "assistant", "content": b["content"]})
-			# A tool call whose follow-up reply came back empty never got closed
-			# out by a response or another tool call; drop that trailing,
-			# unfinished round so it doesn't sit there unanswered forever.
 			while entries and entries[-1]["role"] == "tool":
 				entries.pop()
 			if entries and entries[-1]["role"] == "assistant" and entries[-1].get("tool_calls"):
@@ -413,12 +474,8 @@ class Message:
 		self.output_tokens = output_tokens
 		self.turns = []
 
-	@property
-	def path(self):
-		return os.path.join(self.session.folder, f"{self.uuid}.json")
-
 	def to_dict(self):
-		return {"uuid": self.uuid, "session": self.session.uuid, "hidden": self.hidden,
+		return {"type": "message", "uuid": self.uuid, "session": self.session.uuid, "hidden": self.hidden,
 				"input_tokens": self.input_tokens, "output_tokens": self.output_tokens,
 				"turns": [t.to_dict() for t in self.turns]}
 
@@ -430,14 +487,7 @@ class Message:
 		return message
 
 	def save(self):
-		if self.session.archived:
-			raise ValueError("cannot save a message on an archived session")
-		os.makedirs(self.session.folder, exist_ok=True)
-		tmp = self.path + ".tmp"
-		with open(tmp, "w") as f:
-			json.dump(self.to_dict(), f, indent=2)
-		os.replace(tmp, self.path)
-		self.session.update_index_from(self)
+		self.session.save_message(self)
 
 	def next_uuid(self):
 		dt = datetime.now(timezone.utc)
@@ -522,10 +572,6 @@ class Message:
 			last_flush = time.monotonic()
 
 			def flush(target):
-				# Re-rendering the whole accumulated text and diffing it is O(length),
-				# so doing it on every token makes a long reply quadratic. Rate-limit
-				# it instead; each flush also persists the turn, so a reload loses at
-				# most the unflushed tail.
 				nonlocal reasoning_html, content_html
 				parts = reasoning_parts if target == "reasoning" else content_parts
 				old_html = reasoning_html if target == "reasoning" else content_html
@@ -569,22 +615,16 @@ class Message:
 					tool_calls = message.get("tool_calls")
 
 			if error:
-				# Preserve partial content (reasoning and response) even when an error occurs
-				# This allows the frontend to display what was generated before the error
 				if reasoning_parts:
-					# Don't discard reasoning - keep it for display
 					turn.reasoning = "".join(reasoning_parts)
 					turn.save()
 					yield {"type": "reasoning", "content": turn.reasoning,
 							"uuid": turn.uuid, "timestamp": turn.timestamp, "session": session_uuid}
-				
 				if content_parts:
-					# Don't discard response - keep it for display
 					turn.response = "".join(content_parts)
 					turn.save()
 					yield {"type": "response", "content": turn.response, "model": model.id,
 							"uuid": turn.uuid, "timestamp": turn.timestamp, "session": session_uuid}
-				
 				turn.error = error
 				turn.save()
 				yield {"type": "error", "error": error, "model": model.id,
