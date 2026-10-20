@@ -28,6 +28,17 @@ def truncate(text, length):
 	return text if len(text) <= length else text[:length] + "…"
 
 
+def expandpath(p):
+	"""Expand ~ and env vars in a path; leave other strings as-is."""
+	if p is None or isinstance(p, bool):
+		return p
+	p = str(p)
+	try:
+		return os.path.expanduser(os.path.expandvars(p))
+	except Exception:
+		return p
+
+
 class ToolError(Exception):
 	pass
 
@@ -107,7 +118,7 @@ class ReadFileTool(Tool):
 
 	def __init__(self, toolbox, file_path, offset=1, limit=None):
 		super().__init__(toolbox)
-		self.file_path = file_path
+		self.file_path = expandpath(file_path)
 		self.offset = offset
 		self.limit = limit
 
@@ -132,7 +143,7 @@ class WriteFileTool(Tool):
 
 	def __init__(self, toolbox, file_path, content):
 		super().__init__(toolbox)
-		self.file_path = file_path
+		self.file_path = expandpath(file_path)
 		self.content = content
 
 	@property
@@ -156,7 +167,7 @@ class EditFileTool(Tool):
 
 	def __init__(self, toolbox, file_path, old, new):
 		super().__init__(toolbox)
-		self.file_path = file_path
+		self.file_path = expandpath(file_path)
 		self.old = old
 		self.new = new
 
@@ -210,7 +221,7 @@ class EditFileRangeTool(Tool):
 
 	def __init__(self, toolbox, file_path, start_line, end_line, new):
 		super().__init__(toolbox)
-		self.file_path = file_path
+		self.file_path = expandpath(file_path)
 		self.start_line = start_line
 		self.end_line = end_line
 		self.new = new
@@ -250,7 +261,7 @@ class AppendFileTool(Tool):
 
 	def __init__(self, toolbox, file_path, content):
 		super().__init__(toolbox)
-		self.file_path = file_path
+		self.file_path = expandpath(file_path)
 		self.content = content
 
 	@property
@@ -271,8 +282,8 @@ class RenameFileTool(Tool):
 
 	def __init__(self, toolbox, file_path, new_file_path):
 		super().__init__(toolbox)
-		self.file_path = file_path
-		self.new_file_path = new_file_path
+		self.file_path = expandpath(file_path)
+		self.new_file_path = expandpath(new_file_path)
 
 	@property
 	def summary(self):
@@ -293,8 +304,8 @@ class CopyFileTool(Tool):
 
 	def __init__(self, toolbox, file_path, new_file_path):
 		super().__init__(toolbox)
-		self.file_path = file_path
-		self.new_file_path = new_file_path
+		self.file_path = expandpath(file_path)
+		self.new_file_path = expandpath(new_file_path)
 
 	@property
 	def summary(self):
@@ -335,8 +346,8 @@ class DownloadUrlTool(Tool):
 
 	def __init__(self, toolbox, url, file_path):
 		super().__init__(toolbox)
-		self.url = url
-		self.file_path = file_path
+		self.url = url   # URLs are never expanded
+		self.file_path = expandpath(file_path)
 
 	@property
 	def summary(self):
@@ -360,7 +371,7 @@ class DeleteFileTool(Tool):
 
 	def __init__(self, toolbox, file_path):
 		super().__init__(toolbox)
-		self.file_path = file_path
+		self.file_path = expandpath(file_path)
 
 	@property
 	def summary(self):
@@ -438,7 +449,7 @@ class TodoTool(Tool):
 				  "item": {"type": "string"}}
 	required = ["action"]
 
-	TODO_FILE = "todo.md"
+	TODO_FILE = expandpath("todo.md")
 
 	def __init__(self, toolbox, action, item=None):
 		super().__init__(toolbox)
@@ -541,7 +552,7 @@ class MakeFolderTool(Tool):
 
 	def __init__(self, toolbox, folder_path):
 		super().__init__(toolbox)
-		self.folder_path = folder_path
+		self.folder_path = expandpath(folder_path)
 
 	@property
 	def summary(self):
@@ -559,7 +570,7 @@ class RemoveFolderTool(Tool):
 
 	def __init__(self, toolbox, folder_path):
 		super().__init__(toolbox)
-		self.folder_path = folder_path
+		self.folder_path = expandpath(folder_path)
 
 	@property
 	def summary(self):
