@@ -464,12 +464,14 @@ def rotate_keys():
 
 @app.route('/<path:filename>')
 def serve_file(filename):
-    # First try to serve from the current working directory (URLROOT)
-    urlroot_path = os.path.join(URLROOT, filename)
-    if os.path.isfile(urlroot_path):
-        return send_from_directory(URLROOT, filename)
-    # Fallback to the application's own directory (ROOT)
-    return send_from_directory(ROOT, filename)
+    # Serve the application's own assets first. URLROOT is wherever the server
+    # happened to be started, which is not reliably this directory: a stale copy
+    # of e.g. chatpad.js left in the cwd used to shadow the real one and silently
+    # break the UI. Only fall back to the cwd for files the app doesn't ship.
+    app_path = os.path.join(ROOT, filename)
+    if os.path.isfile(app_path):
+        return send_from_directory(ROOT, filename)
+    return send_from_directory(URLROOT, filename)
 
 
 if __name__ == "__main__":
